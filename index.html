@@ -578,7 +578,7 @@
               return;
             }
             isMyTurn = true;
-            currentPlayer = player2 || null;
+            currentPlayer = player2;
             soundTurn.play(); // Sonido de nueva ronda (turno del cliente)
             updateTurnInfoDisplay();
             if (isMyTurn && currentPlayer) {
@@ -588,9 +588,10 @@
               startMovementPhase();
             } else {
               disableGameControls();
-              if (!currentPlayer)
+              if (!currentPlayer) {
                 turnInfoDisplayEl.textContent =
                   "Error: Falla de sincronización de turno.";
+              }
             }
             break;
 
