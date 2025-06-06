@@ -577,14 +577,16 @@
               );
               return;
             }
-            isMyTurn = true;
+
             if (player2) {
               currentPlayer = player1;
+              isMyTurn = false;
             } else {
               console.error(
                 "[CLIENT CRITICAL] 'switch_turn': player2 es NULO."
               );
               currentPlayer = player2;
+              isMyTurn = true;
             }
             updateTurnInfoDisplay();
             if (isMyTurn && currentPlayer) {
