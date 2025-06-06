@@ -98,6 +98,7 @@
       #fireButton:disabled {
         background-color: #9ca3af;
       }
+
       .message-box {
         min-height: 40px;
         border-radius: 6px;
@@ -320,54 +321,51 @@
           setupConnectionEvents();
 
           if (isHost && !gameHasStarted) {
-            // Esperar a que conn.open sea true antes de enviar initial_state
-            conn.on("open", () => {
-              generateTerrain();
+            generateTerrain();
 
-              let tank1X = TANK_WIDTH + 40;
-              let tank1Y = getTerrainHeightAtX(tank1X);
-              if (tank1Y < MIN_TERRAIN_Y_POS + TANK_HEIGHT + 20)
-                tank1X += TANK_WIDTH;
+            let tank1X = TANK_WIDTH + 40;
+            let tank1Y = getTerrainHeightAtX(tank1X);
+            if (tank1Y < MIN_TERRAIN_Y_POS + TANK_HEIGHT + 20)
+              tank1X += TANK_WIDTH;
+            tank1Y = getTerrainHeightAtX(tank1X);
+
+            let tank2X = canvasEl.width - TANK_WIDTH - 40;
+            let tank2Y = getTerrainHeightAtX(tank2X);
+            if (tank2Y < MIN_TERRAIN_Y_POS + TANK_HEIGHT + 20)
+              tank2X -= TANK_WIDTH;
+            tank2Y = getTerrainHeightAtX(tank2X);
+
+            const minTankDistance = TANK_WIDTH * 4;
+            if (Math.abs(tank1X - tank2X) < minTankDistance) {
+              tank1X = TANK_WIDTH + 30;
               tank1Y = getTerrainHeightAtX(tank1X);
-
-              let tank2X = canvasEl.width - TANK_WIDTH - 40;
-              let tank2Y = getTerrainHeightAtX(tank2X);
-              if (tank2Y < MIN_TERRAIN_Y_POS + TANK_HEIGHT + 20)
-                tank2X -= TANK_WIDTH;
+              tank2X = canvasEl.width - TANK_WIDTH - 30;
               tank2Y = getTerrainHeightAtX(tank2X);
+            }
 
-              const minTankDistance = TANK_WIDTH * 4;
-              if (Math.abs(tank1X - tank2X) < minTankDistance) {
-                tank1X = TANK_WIDTH + 30;
-                tank1Y = getTerrainHeightAtX(tank1X);
-                tank2X = canvasEl.width - TANK_WIDTH - 30;
-                tank2Y = getTerrainHeightAtX(tank2X);
-              }
+            player1 = new Tank(tank1X, tank1Y, "#3b82f6", 1);
+            player2 = new Tank(tank2X, tank2Y, "#ef4444", -1);
+            currentPlayer = player1;
 
-              player1 = new Tank(tank1X, tank1Y, "#3b82f6", 1);
-              player2 = new Tank(tank2X, tank2Y, "#ef4444", -1);
-              currentPlayer = player1;
+            const initialState = {
+              type: "initial_state",
+              terrainPoints: terrainPoints,
+              player1Pos: { x: player1.x, y: player1.y },
+              player2Pos: { x: player2.x, y: player2.y },
+            };
+            sendData(initialState);
+            console.log("[HOST] Estado inicial enviado:", initialState);
 
-              const initialState = {
-                type: "initial_state",
-                terrainPoints: terrainPoints,
-                player1Pos: { x: player1.x, y: player1.y },
-                player2Pos: { x: player2.x, y: player2.y },
-              };
-              sendData(initialState);
-              console.log("[HOST] Estado inicial enviado:", initialState);
+            gameHasStarted = true;
+            startScreen.classList.add("hidden");
+            gameArea.classList.remove("hidden");
 
-              gameHasStarted = true;
-              startScreen.classList.add("hidden");
-              gameArea.classList.remove("hidden");
+            drawGame();
+            updateHealthDisplays();
+            updateTurnInfoDisplay();
 
-              drawGame();
-              updateHealthDisplays();
-              updateTurnInfoDisplay();
-
-              isMyTurn = true; // Host empieza
-              startMovementPhase();
-            });
+            isMyTurn = true;
+            startMovementPhase();
           }
         });
 
@@ -475,136 +473,144 @@
         console.log(
           `[CLIENT ${localPeerId}] Processing data type: ${data.type}`
         );
-        switch (data.type) {
-          case "initial_state":
-            if (isHost) return;
-            terrainPoints = data.terrainPoints;
-            if (!data.player1Pos || !data.player2Pos) {
-              console.error(
-                "CRITICAL: initial_state missing player positions!"
-              );
-              p2pStatusDisplay.textContent =
-                "Error: Datos iniciales incompletos del host.";
-              if (conn) conn.close();
-              return;
-            }
-            player1 = new Tank(
-              data.player1Pos.x,
-              data.player1Pos.y,
-              "#3b82f6",
-              1
-            );
-            player2 = new Tank(
-              data.player2Pos.x,
-              data.player2Pos.y,
-              "#ef4444",
-              -1
-            );
-            currentPlayer = player1;
-            isMyTurn = false;
-            gameHasStarted = true;
-
-            startScreen.classList.add("hidden");
-            gameArea.classList.remove("hidden");
-
-            drawGame();
-            updateHealthDisplays();
-            updateTurnInfoDisplay();
-            p2pStatusDisplay.textContent =
-              "¡Juego iniciado! Es el turno del Jugador 1 (Host).";
-            messageBoxEl.textContent =
-              "El juego ha comenzado. Esperando al Jugador 1.";
-            messageBoxEl.className =
-              "message-box text-center my-4 p-3 rounded-lg h-12 info-message";
-            disableGameControls();
-            break;
-          case "move":
-            const playerToMove =
-              data.forPlayer === "player1" ? player1 : player2;
-            if (playerToMove) {
-              playerToMove.x = data.x;
-              playerToMove.y = data.y;
-              drawGame();
-            }
-            break;
-          case "aim":
-            const playerToAim =
-              data.forPlayer === "player1" ? player1 : player2;
-            if (playerToAim) {
-              playerToAim.turretAngle = data.angle;
-              if (playerToAim !== currentPlayer || !isMyTurn) {
-                angleInputEl.value = data.angle;
-                powerInputEl.value = data.power;
-                angleValueDisplayEl.textContent = data.angle;
-                powerValueDisplayEl.textContent = data.power;
+        try {
+          switch (data.type) {
+            case "initial_state":
+              if (isHost) return;
+              terrainPoints = data.terrainPoints;
+              if (!data.player1Pos || !data.player2Pos) {
+                console.error(
+                  "CRITICAL: initial_state missing player positions!"
+                );
+                p2pStatusDisplay.textContent =
+                  "Error: Datos iniciales incompletos del host.";
+                if (conn) conn.close();
+                return;
               }
-              drawGame();
-            }
-            break;
-          case "fire":
-            if (
-              !player1 ||
-              !player2 ||
-              !terrainPoints ||
-              terrainPoints.length < 2
-            ) {
-              console.error(
-                "[CRITICAL] 'fire' event received, but game state (players/terrain) is not ready!",
-                { player1, player2, terrainPoints }
+              player1 = new Tank(
+                data.player1Pos.x,
+                data.player1Pos.y,
+                "#3b82f6",
+                1
               );
-              return;
-            }
-            projectile = new Projectile(
-              data.startX,
-              data.startY,
-              data.velocityX,
-              data.velocityY,
-              data.color
-            );
-            disableGameControls();
-            animateProjectile();
-            break;
-          case "health_update":
-            if (player1) player1.health = data.player1Health;
-            if (player2) player2.health = data.player2Health;
-            updateHealthDisplays();
-            checkGameOverP2P();
-            break;
-          case "switch_turn":
-            if (isHost) {
-              console.warn(
-                "[HOST] Recibió 'switch_turn', lo cual es inesperado. Ignorando."
+              player2 = new Tank(
+                data.player2Pos.x,
+                data.player2Pos.y,
+                "#ef4444",
+                -1
               );
-              return;
-            }
-
-            if (player2) {
               currentPlayer = player1;
-              isMyTurn = true;
-            } else {
-              console.error(
-                "[CLIENT CRITICAL] 'switch_turn': player2 es NULO."
-              );
-              currentPlayer = player2;
               isMyTurn = false;
-            }
-            updateTurnInfoDisplay();
-            if (isMyTurn && currentPlayer) {
-              messageBoxEl.textContent = "¡Es tu turno! Muévete o dispara.";
+              gameHasStarted = true;
+
+              startScreen.classList.add("hidden");
+              gameArea.classList.remove("hidden");
+
+              drawGame();
+              updateHealthDisplays();
+              updateTurnInfoDisplay();
+              p2pStatusDisplay.textContent =
+                "¡Juego iniciado! Es el turno del Jugador 1 (Host).";
+              messageBoxEl.textContent =
+                "El juego ha comenzado. Esperando al Jugador 1.";
               messageBoxEl.className =
                 "message-box text-center my-4 p-3 rounded-lg h-12 info-message";
-              startMovementPhase();
-            } else {
-              console.error("[CLIENT] Falla de sincronización de turno.");
               disableGameControls();
-              if (!currentPlayer)
-                turnInfoDisplayEl.textContent =
-                  "Error: Falla de sincronización de turno.";
-            }
-            break;
-          case "game_over":
-            handleGameOverP2P(data.winner);
-            break;
+              break;
+            case "move":
+              const playerToMove =
+                data.forPlayer === "player1" ? player1 : player2;
+              if (playerToMove) {
+                playerToMove.x = data.x;
+                playerToMove.y = data.y;
+                drawGame();
+              }
+              break;
+            case "aim":
+              const playerToAim =
+                data.forPlayer === "player1" ? player1 : player2;
+              if (playerToAim) {
+                playerToAim.turretAngle = data.angle;
+                if (playerToAim !== currentPlayer || !isMyTurn) {
+                  angleInputEl.value = data.angle;
+                  powerInputEl.value = data.power;
+                  angleValueDisplayEl.textContent = data.angle;
+                  powerValueDisplayEl.textContent = data.power;
+                }
+                drawGame();
+              }
+              break;
+            case "fire":
+              if (
+                !player1 ||
+                !player2 ||
+                !terrainPoints ||
+                terrainPoints.length < 2
+              ) {
+                console.error(
+                  "[CRITICAL] 'fire' event received, but game state (players/terrain) is not ready!",
+                  { player1, player2, terrainPoints }
+                );
+                return;
+              }
+              projectile = new Projectile(
+                data.startX,
+                data.startY,
+                data.velocityX,
+                data.velocityY,
+                data.color
+              );
+              disableGameControls();
+              animateProjectile();
+              break;
+            case "state_update":
+              handleStateUpdate(data);
+              break;
+            case "game_over":
+              handleGameOverP2P(data.winner);
+              break;
+            default:
+              console.warn("Tipo de dato P2P no reconocido:", data.type);
+              break;
+          }
+        } catch (e) {
+          console.error(
+            `[CRITICAL] Error procesando P2P data type ${data.type}:`,
+            e,
+            "Data:",
+            data
+          );
+        }
+      }
+
+      function handleStateUpdate(data) {
+        console.log("Processing state_update:", data);
+        if (player1) player1.health = data.player1Health;
+        if (player2) player2.health = data.player2Health;
+        updateHealthDisplays();
+
+        const nextPlayerIsP1 = data.nextPlayer === "player1";
+        currentPlayer = nextPlayerIsP1 ? player1 : player2;
+
+        // Am I the host and it's P1's turn? OR am I the client and it's P2's turn?
+        isMyTurn = (isHost && nextPlayerIsP1) || (!isHost && !nextPlayerIsP1);
+
+        updateTurnInfoDisplay();
+
+        if (isMyTurn) {
+          console.log("It's my turn now. Starting movement phase.");
+          messageBoxEl.textContent = "¡Es tu turno! Muévete o dispara.";
+          messageBoxEl.className =
+            "message-box text-center my-4 p-3 rounded-lg h-12 info-message";
+          startMovementPhase();
+        } else {
+          console.log("It's opponent's turn. Disabling controls.");
+          messageBoxEl.textContent = `Esperando al ${
+            currentPlayer === player1 ? "Jugador 1" : "Jugador 2"
+          }...`;
+          messageBoxEl.className =
+            "message-box text-center my-4 p-3 rounded-lg h-12";
+          disableGameControls();
         }
       }
 
@@ -615,6 +621,10 @@
           p2pStatusDisplay.textContent = `Reconectado con oponente: ${conn.peer}`;
           if (player1 && player2 && terrainPoints && terrainPoints.length > 0) {
             drawGame();
+          } else {
+            console.warn(
+              "startGameLogic (reconnect): Estado base no listo para dibujar."
+            );
           }
           updateTurnInfoDisplay();
           if (isMyTurn && !isMovingPhase && !projectile && !gameOver) {
@@ -698,6 +708,10 @@
           this.turretDirection = turretDirection;
         }
         draw() {
+          if (typeof this.x === "undefined" || typeof this.y === "undefined") {
+            console.warn("Tank.draw() llamado con x o y indefinido.", this);
+            return;
+          }
           ctx.fillStyle = this.color;
           ctx.beginPath();
           ctx.roundRect(
@@ -725,6 +739,8 @@
           ctx.stroke();
         }
         isHit(pX, pY) {
+          if (typeof this.x === "undefined" || typeof this.y === "undefined")
+            return false;
           return (
             pX >= this.x - this.width / 2 &&
             pX <= this.x + this.width / 2 &&
@@ -741,7 +757,7 @@
           else if (finalX + halfWidth > canvasEl.width)
             finalX = canvasEl.width - halfWidth;
 
-          if (otherPlayer) {
+          if (otherPlayer && typeof otherPlayer.x !== "undefined") {
             const otherHalfWidth = otherPlayer.width / 2;
             const myFinalLeft = finalX - halfWidth;
             const myFinalRight = finalX + halfWidth;
@@ -849,7 +865,6 @@
         if (xPos < terrainPoints[0].x) return terrainPoints[0].y;
         return terrainPoints[terrainPoints.length - 1].y;
       }
-
       function drawTerrain() {
         if (!terrainPoints || terrainPoints.length < 2) return;
         ctx.fillStyle = "#8B4513";
@@ -898,14 +913,21 @@
           drawTerrain();
         } else {
           console.warn(
-            "drawGame llamado sin terrainPoints definidos. Pantalla podría estar gris."
+            "drawGame llamado sin terrainPoints definidos. Pantalla podría estar gris. Intentando dibujar fondo."
           );
-          return;
+          ctx.fillStyle = "#d0e0f0"; // Color de fondo del canvas
+          ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
         }
-        if (player1) player1.draw();
-        else console.warn("player1 no definido al intentar dibujar");
-        if (player2) player2.draw();
-        else console.warn("player2 no definido al intentar dibujar");
+        if (player1 && typeof player1.draw === "function") player1.draw();
+        else
+          console.warn(
+            "player1 no definido o sin método draw al intentar dibujar"
+          );
+        if (player2 && typeof player2.draw === "function") player2.draw();
+        else
+          console.warn(
+            "player2 no definido o sin método draw al intentar dibujar"
+          );
 
         if (projectile) projectile.draw();
       }
@@ -918,18 +940,32 @@
       }
 
       function updateTurnInfoDisplay() {
+        console.log(
+          `[UI] updateTurnInfoDisplay: isMyTurn=${isMyTurn}, currentPlayer: ${
+            currentPlayer ? (currentPlayer === player1 ? "P1" : "P2") : "Nulo"
+          }, P1: ${!!player1}, P2: ${!!player2}`
+        );
+
         if (!gameHasStarted || !player1 || !player2) {
           turnInfoDisplayEl.textContent = "Configurando jugadores...";
+          console.warn(
+            "[UI WARN] updateTurnInfoDisplay: Juego no iniciado o jugadores no listos."
+          );
           return;
         }
         if (!currentPlayer) {
           turnInfoDisplayEl.textContent = "Esperando jugadores...";
+          console.warn(
+            `[UI WARN] updateTurnInfoDisplay: currentPlayer es nulo. isMyTurn=${isMyTurn}`
+          );
           return;
         }
         turnInfoDisplayEl.textContent = `Turno del ${
           currentPlayer === player1 ? "Jugador 1 (Azul)" : "Jugador 2 (Rojo)"
         }`;
-        if (isMyTurn) turnInfoDisplayEl.textContent += " (¡Tú!)";
+        if (isMyTurn) {
+          turnInfoDisplayEl.textContent += " (¡Tú!)";
+        }
       }
 
       function updateAnglePowerDisplays() {
@@ -950,6 +986,7 @@
             forPlayer: currentPlayer === player1 ? "player1" : "player2",
           });
           drawGame();
+        } else if (!isMyTurn && currentPlayer) {
         }
       }
 
@@ -1013,16 +1050,16 @@
           movementAnimationId = null;
           return;
         }
-        let moved = false;
+        let m = false;
         if (currentPlayer) {
           if (keysDown["ArrowLeft"]) {
-            if (currentPlayer.move(-1)) moved = true;
+            if (currentPlayer.move(-1)) m = true;
           }
           if (keysDown["ArrowRight"]) {
-            if (currentPlayer.move(1)) moved = true;
+            if (currentPlayer.move(1)) m = true;
           }
         }
-        if (moved) drawGame();
+        if (m) drawGame();
         movementAnimationId = requestAnimationFrame(movementLoop);
       }
 
@@ -1044,7 +1081,7 @@
         movementAnimationId = null;
         keysDown = {};
         if (currentPlayer)
-          currentPlayer.y = getTerrainHeightAtX(currentPlayer.x);
+          currentPlayer.y = getTerrainHeightAtX(currentPlayer.y);
         if (!isReset) {
           if (isMyTurn && currentPlayer) {
             enableGameControls();
@@ -1149,7 +1186,7 @@
         const targetPlayer = currentPlayer === player1 ? player2 : player1;
         if (!targetPlayer) {
           console.warn(
-            "animateProjectile: targetPlayer no definido. Oponente desconectado."
+            "animateProjectile: targetPlayer no definido. Oponente podría haberse desconectado."
           );
           projectile = null;
           messageBoxEl.textContent = "Oponente no disponible.";
@@ -1199,37 +1236,25 @@
         projectile = null;
 
         if (isHost) {
-          player1.health = newP1Health;
-          player2.health = newP2Health;
-          sendData({
-            type: "health_update",
-            player1Health: player1.health,
-            player2Health: player2.health,
-          });
+          const nextPlayerKey =
+            currentPlayer === player1 ? "player2" : "player1";
 
-          if (checkGameOverP2P()) return;
+          // Anunciar el nuevo estado a todos (incluido a sí mismo)
+          const stateUpdateData = {
+            type: "state_update",
+            player1Health: newP1Health,
+            player2Health: newP2Health,
+            nextPlayer: nextPlayerKey,
+          };
+          sendData(stateUpdateData);
 
-          sendData({ type: "switch_turn" });
-          isMyTurn = false;
-          currentPlayer = player2;
-          updateTurnInfoDisplay();
-          if (!isMyTurn && currentPlayer) {
-            disableGameControls();
-            messageBoxEl.textContent = `Esperando al ${
-              currentPlayer === player1 ? "Jugador 1" : "Jugador 2"
-            }...`;
-          }
-        }
-        if (!isHost) updateHealthDisplays();
-
-        if (gameOver) {
-          disableGameControls();
+          // Host también procesa la actualización
+          handleStateUpdate(stateUpdateData);
         }
       }
 
       function checkGameOverP2P() {
         if (gameOver) return true;
-        if (!player1 || !player2) return false;
         if (!player1 || !player2) {
           console.warn("checkGameOverP2P: player1 o player2 no definidos.");
           return false;
