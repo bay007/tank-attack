@@ -580,13 +580,13 @@
 
             if (player2) {
               currentPlayer = player1;
-              isMyTurn = false;
+              isMyTurn = true;
             } else {
               console.error(
                 "[CLIENT CRITICAL] 'switch_turn': player2 es NULO."
               );
               currentPlayer = player2;
-              isMyTurn = true;
+              isMyTurn = false;
             }
             updateTurnInfoDisplay();
             if (isMyTurn && currentPlayer) {
