@@ -3,9 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Juego de Tanques P2P</title>
+    <title>Juego de Tanques P2P con Sonidos</title>
+    <!-- Tailwind para estilos -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PeerJS para P2P -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- Howler.js para manejar sonidos -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
     <style>
       body {
         font-family: "Inter", sans-serif;
@@ -141,7 +145,7 @@
   </head>
   <body class="bg-slate-100">
     <h1 class="text-3xl font-bold text-slate-800 mb-6 text-center">
-      Juego de Tanques Táctico P2P
+      Juego de Tanques Táctico P2P con Sonidos
     </h1>
 
     <div id="startScreen" class="p-6 bg-white rounded-lg shadow-lg">
@@ -254,6 +258,14 @@
     </div>
 
     <script>
+      // --- Carga de Sonidos con Howler.js ---
+      const soundAngle = new Howl({ src: ["sounds/angle.mp3"] });
+      const soundPower = new Howl({ src: ["sounds/power.mp3"] });
+      const soundFire = new Howl({ src: ["sounds/fire.mp3"] });
+      const soundHit = new Howl({ src: ["sounds/hit.mp3"] });
+      const soundMiss = new Howl({ src: ["sounds/miss.mp3"] });
+      const soundTurn = new Howl({ src: ["sounds/turn.mp3"] });
+
       // --- PeerJS Setup ---
       let peer;
       let conn;
@@ -322,6 +334,9 @@
           if (isHost && !gameHasStarted) {
             // Esperar a que conn.open sea true antes de enviar initial_state
             conn.on("open", () => {
+              // Sonido de turno del host
+              soundTurn.play();
+
               generateTerrain();
 
               let tank1X = TANK_WIDTH + 40;
@@ -475,16 +490,8 @@
         switch (data.type) {
           case "initial_state":
             if (isHost) return;
+
             terrainPoints = data.terrainPoints;
-            if (!data.player1Pos || !data.player2Pos) {
-              console.error(
-                "CRITICAL: initial_state missing player positions!"
-              );
-              p2pStatusDisplay.textContent =
-                "Error: Datos iniciales incompletos del host.";
-              if (conn) conn.close();
-              return;
-            }
             player1 = new Tank(
               data.player1Pos.x,
               data.player1Pos.y,
@@ -500,8 +507,9 @@
 
             currentPlayer = player1;
             isMyTurn = false;
-
             gameHasStarted = true;
+
+            // Mostrar área de juego
             startScreen.classList.add("hidden");
             gameArea.classList.remove("hidden");
 
@@ -516,6 +524,7 @@
               "message-box text-center my-4 p-3 rounded-lg h-12 info-message";
             disableGameControls();
             break;
+
           case "move":
             const playerToMove =
               data.forPlayer === "player1" ? player1 : player2;
@@ -525,6 +534,7 @@
               drawGame();
             }
             break;
+
           case "aim":
             const playerToAim =
               data.forPlayer === "player1" ? player1 : player2;
@@ -539,6 +549,7 @@
               drawGame();
             }
             break;
+
           case "fire":
             projectile = new Projectile(
               data.startX,
@@ -548,30 +559,27 @@
               data.color
             );
             disableGameControls();
+            soundFire.play(); // Sonido de disparo al recibir
             animateProjectile();
             break;
+
           case "health_update":
             if (player1) player1.health = data.player1Health;
             if (player2) player2.health = data.player2Health;
             updateHealthDisplays();
             checkGameOverP2P();
             break;
+
           case "switch_turn":
             if (isHost) {
               console.warn(
-                "[HOST] Recibió 'switch_turn', lo cual es inesperado. Ignorando."
+                "[HOST] Recibió 'switch_turn', lo cual es inesperado."
               );
               return;
             }
             isMyTurn = true;
-            if (player2) {
-              currentPlayer = player2;
-            } else {
-              console.error(
-                "[CLIENT CRITICAL] 'switch_turn': player2 es NULO."
-              );
-              currentPlayer = null;
-            }
+            currentPlayer = player2 || null;
+            soundTurn.play(); // Sonido de nueva ronda (turno del cliente)
             updateTurnInfoDisplay();
             if (isMyTurn && currentPlayer) {
               messageBoxEl.textContent = "¡Es tu turno! Muévete o dispara.";
@@ -579,13 +587,13 @@
                 "message-box text-center my-4 p-3 rounded-lg h-12 info-message";
               startMovementPhase();
             } else {
-              console.error("[CLIENT] Falla de sincronización de turno.");
               disableGameControls();
               if (!currentPlayer)
                 turnInfoDisplayEl.textContent =
                   "Error: Falla de sincronización de turno.";
             }
             break;
+
           case "game_over":
             handleGameOverP2P(data.winner);
             break;
@@ -613,7 +621,6 @@
           }
           return;
         }
-
         if (!gameHasStarted && conn && conn.open) {
           initGameVariables();
           if (!isHost) {
@@ -698,7 +705,7 @@
           const tX = this.x,
             tY = this.y - this.height / 2;
           ctx.moveTo(tX, tY);
-          let rA =
+          const rA =
             this.turretDirection === 1
               ? ((180 - this.turretAngle) * Math.PI) / 180
               : (this.turretAngle * Math.PI) / 180;
@@ -893,7 +900,6 @@
         else console.warn("player1 no definido al intentar dibujar");
         if (player2) player2.draw();
         else console.warn("player2 no definido al intentar dibujar");
-
         if (projectile) projectile.draw();
       }
 
@@ -1080,6 +1086,8 @@
         const velocityX = velocityMagnitude * Math.cos(initialAngleRad);
         const velocityY = -velocityMagnitude * Math.sin(initialAngleRad);
 
+        soundFire.play(); // Sonido de disparo inmediato
+
         const fireData = {
           type: "fire",
           angle: angle,
@@ -1152,10 +1160,12 @@
           if (targetPlayer === player1) newP1Health -= DAMAGE_PER_HIT;
           else newP2Health -= DAMAGE_PER_HIT;
 
+          soundHit.play(); // Sonido de impacto
           messageBoxEl.textContent = `¡Impacto!`;
           messageBoxEl.className =
             "message-box text-center my-4 p-3 rounded-lg h-12 hit-message";
         } else if (projectile.y + PROJECTILE_RADIUS > terrainCollisionY) {
+          soundMiss.play(); // Sonido de fallo al chocar con terreno
           messageBoxEl.textContent =
             "¡Fallaste! El proyectil golpeó el terreno.";
           messageBoxEl.className =
@@ -1165,6 +1175,7 @@
           projectile.x > canvasEl.width ||
           projectile.y < -canvasEl.height * 2
         ) {
+          soundMiss.play(); // Sonido de fallo al irse lejos
           messageBoxEl.textContent =
             "¡Fallaste! El proyectil se fue muy lejos.";
           messageBoxEl.className =
@@ -1292,7 +1303,12 @@
               }
               break;
           }
-          if (angleChanged || powerChanged) {
+          if (angleChanged) {
+            soundAngle.play();
+            updateAnglePowerDisplays();
+          }
+          if (powerChanged) {
+            soundPower.play();
             updateAnglePowerDisplays();
           }
         }
@@ -1307,8 +1323,16 @@
         }
       });
 
-      angleInputEl.addEventListener("input", updateAnglePowerDisplays);
-      powerInputEl.addEventListener("input", updateAnglePowerDisplays);
+      // Reemplazamos los listeners anteriores de 'input' con reproducción de sonido + lógica
+      angleInputEl.addEventListener("input", () => {
+        soundAngle.play();
+        updateAnglePowerDisplays();
+      });
+      powerInputEl.addEventListener("input", () => {
+        soundPower.play();
+        updateAnglePowerDisplays();
+      });
+
       fireButtonEl.addEventListener("click", () => {
         if (
           isMyTurn &&
